@@ -9,18 +9,19 @@ sys.path.insert(0, str(REPO_ROOT / "worker_ipc"))
 
 from worker_ipc import Request, Response, UdsJsonlServer  # noqa: E402
 
-from service import handle_command  # noqa: E402
+from service import handle_command, initialize_model  # noqa: E402
 
 
 def _handle_request(request: Request) -> Response:
     try:
         payload = handle_command(request.command, request.payload)
         return Response.success(request.request_id, payload)
-    except ValueError as exc:
+    except Exception as exc:
         return Response.error(request.request_id, str(exc))
 
 
 def main() -> int:
+    initialize_model()
     server = UdsJsonlServer.from_env()
     server.serve_forever(_handle_request)
     return 0

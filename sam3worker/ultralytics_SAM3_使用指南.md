@@ -6,10 +6,10 @@
 
 在 `ultralytics` 里，当前最值得关注的是两条单图入口：
 
-| 入口 | 适用场景 | 提示方式 |
-| --- | --- | --- |
-| `SAM("sam3.pt")` | 已知目标大致位置，想切出某个具体实例 | 点、框、mask，或无提示 |
-| `SAM3SemanticPredictor` | 想按语义找出所有匹配实例 | 文本、示例框 |
+| 入口                    | 适用场景                             | 提示方式               |
+| ----------------------- | ------------------------------------ | ---------------------- |
+| `SAM("sam3.pt")`        | 已知目标大致位置，想切出某个具体实例 | 点、框、mask，或无提示 |
+| `SAM3SemanticPredictor` | 想按语义找出所有匹配实例             | 文本、示例框           |
 
 可以直接这样理解：
 
@@ -39,18 +39,6 @@ pip install -U ultralytics
 
 ```python
 model_path = "/absolute/path/to/sam3.pt"
-```
-
-当前机器上的约定：
-
-- 实际权重：`/root/sam3.pt`
-- 仓库入口：`/root/samworker_service/third_party/sam3-ultralytics/sam3.pt`
-- 仓库入口应是指向 `/root/sam3.pt` 的软链接
-
-如果软链接丢失，可执行：
-
-```bash
-ln -s /root/sam3.pt /root/samworker_service/third_party/sam3-ultralytics/sam3.pt
 ```
 
 ### 2.3 `SimpleTokenizer` 报错
