@@ -18,6 +18,8 @@ def _handle_request(request: Request) -> Response:
         return Response.success(request.request_id, payload)
     except ValueError as exc:
         return Response.error(request.request_id, str(exc))
+    except Exception as exc:
+        return Response.error(request.request_id, str(exc))
 
 
 def main() -> int:

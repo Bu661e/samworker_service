@@ -321,44 +321,248 @@ output = inference(image, mask, seed=42, pointmap=None)
 - 不要默认让 `SAM3D-object` 自己从 RGB 估计
   - 这样对机器人坐标系和实际尺度更友好
 
-## 8. 输出里最重要的字段
+## 8. 实际输出字典里有什么
 
-从 `InferencePipelinePointMap.run()` 和 `InferencePipeline.postprocess_slat_output()` 看，最终输出字典里最值得关心的是：
+这里要先说明一个容易误解的点：
 
-- `rotation`
-  - 物体姿态四元数
+- 上游公开接口 `Inference.__call__()` 没有再包一层 `results`
+- 它是直接 `return self._pipeline.run(...)`
+- 所以你最终拿到的是一个“顶层输出字典”，不是 `{"results": {...}}`
+
+也就是说，代码里应该这样取值：
+
+```python
+output = inference(image, mask, seed=42, pointmap=pointmap)
+rotation = output["rotation"]
+translation = output["translation"]
+```
+
+而不是：
+
+```python
+output["results"]["rotation"]
+```
+
+### 8.1 输出字典是怎么拼出来的
+
+`InferencePipelinePointMap.run()` 的默认返回形式是：
+
+```python
+return {
+    **ss_return_dict,
+    **outputs,
+    "pointmap": ...,
+    "pointmap_colors": ...,
+}
+```
+
+所以最终输出本质上由 3 部分组成：
+
+1. `ss_return_dict`
+   - 稀疏结构采样和 pose 解码阶段产出的字段
+2. `outputs`
+   - mesh / gaussian 解码和后处理产出的字段
+3. `pointmap` 与 `pointmap_colors`
+   - 供可视化和后续处理使用的点图信息
+
+### 8.2 默认 public API 下最常见的键
+
+按 `notebook/inference.py` 当前默认调用参数：
+
+- `stage1_only=False`
+- `with_mesh_postprocess=False`
+- `with_texture_baking=False`
+- `with_layout_postprocess=False`
+- `use_vertex_color=True`
+
+最常见的顶层输出字典可以理解成：
+
+```python
+{
+    "shape": ...,
+    "coords_original": ...,
+    "coords": ...,
+    "downsample_factor": ...,
+    "translation": ...,
+    "rotation": ...,
+    "scale": ...,
+    "mesh": ...,
+    "gaussian": ...,
+    "glb": ...,
+    "gs": ...,
+    "pointmap": ...,
+    "pointmap_colors": ...,
+}
+```
+
+其中各字段含义如下：
+
+- `shape`
+  - 稀疏结构阶段的 latent 输出
+  - 更偏模型内部中间结果
+- `coords_original`
+  - 稀疏体素坐标，未下采样版本
+- `coords`
+  - 稀疏体素坐标，下采样后版本
+- `downsample_factor`
+  - 稀疏结构下采样因子
 - `translation`
-  - 平移
+  - 物体平移
+  - 原始类型通常是 `torch.Tensor`
+  - 形状通常接近 `(1, 3)`
+- `rotation`
+  - 物体旋转四元数
+  - 原始类型通常是 `torch.Tensor`
+  - 顺序是 `wxyz`
+  - 形状通常接近 `(1, 4)`
 - `scale`
-  - 缩放
+  - 物体缩放
+  - 原始类型通常是 `torch.Tensor`
+  - 当前上游返回形状通常接近 `(1, 3)`
+- `mesh`
+  - mesh decoder 的原始输出
+  - 不是文件路径
 - `gaussian`
-  - Gaussian Splatting 结果，通常是列表
+  - Gaussian decoder 的原始输出
+  - 通常是列表或容器对象
+  - 代码里通常按 `gaussian[0]` 取第一个对象
+- `glb`
+  - 由 mesh 和 gaussian 后处理得到的 3D 对象
+  - 当前实现里实际是 `trimesh.Trimesh`
+  - 它也不是磁盘文件路径
 - `gs`
   - `gaussian[0]` 的便捷别名
-- `mesh`
-  - mesh 解码结果
-- `glb`
-  - 后处理后的 GLB
 - `pointmap`
   - 下采样后的点图
+  - 形状是 `H x W x 3`
 - `pointmap_colors`
-  - 点图对应颜色
+  - 与下采样点图对齐的颜色图
+  - 形状也是 `H x W x 3`
 
-这些输出不是直接 JSON 可序列化的数据结构。比如：
+### 8.3 哪些字段是条件返回
 
-- `gs` 是内部高斯对象
-- `glb` 是导出的 3D 资产对象
-- `mesh` 也是内部 3D 结构
+不是所有场景都会返回完全相同的键。
 
-所以如果要接进 `sam3dworker` 的结构化响应，不能直接把整个 `output` 原样返回。
+#### `stage1_only=True`
 
-更合理的做法是只提取：
+如果只跑第一阶段，不解码 mesh / gaussian，那么返回会变成：
+
+```python
+{
+    ...ss_return_dict,
+    "voxel": ...,
+    "pointmap": ...,
+    "pointmap_colors": ...,
+}
+```
+
+这时通常不会有：
+
+- `mesh`
+- `gaussian`
+- `glb`
+- `gs`
+
+#### `with_layout_postprocess=True`
+
+如果开启布局后处理，`ss_return_dict` 还可能被补充或覆盖这些字段：
+
+- `iou`
+- `iou_before_optim`
+- `optim_accepted`
+- 更新后的 `rotation`
+- 更新后的 `translation`
+- 更新后的 `scale`
+
+也就是说，后处理打开以后，最终 `pose` 相关字段不一定还是第一次解码出来的原始值。
+
+#### `estimate_plane=True`
+
+如果走地面平面估计的特殊分支，返回会缩成：
+
+```python
+{
+    "glb": ...,
+    "translation": ...,
+    "scale": ...,
+    "rotation": ...,
+}
+```
+
+这个分支更像一个特例，不是常规单物体重建主路径。
+
+### 8.4 为什么不能把这个输出字典直接透传给 `sam3dworker`
+
+上游这个输出字典很适合 notebook 和 Python 内部调试，但不适合直接作为 IPC JSON 返回，原因很具体：
+
+- `mesh` 不是 JSON
+- `gaussian` / `gs` 不是 JSON
+- `glb` 也不是文件路径，而是内存里的 3D 对象
+- `translation` / `rotation` / `scale` 默认还是 tensor
+- `pointmap` 和 `pointmap_colors` 体积可能很大
+
+所以接进 `sam3dworker` 时，不应该原样透传整个 `output`，而应该做一次标准化，只保留适合协议层暴露的内容，例如：
 
 - `rotation`
 - `translation`
 - `scale`
-- 导出的文件路径
-- mask 与实例的映射关系
+- `pointmap_path`
+- 请求要求导出的 `gaussian` 或 `mesh` 文件路径
+- `label`
+- 必要的调试字段
+
+### 8.5 `translation` / `rotation` / `scale` 分别是什么意思
+
+这 3 个字段最好放在同一个公式里理解：
+
+```text
+T(x) = s * R(q) * x + t
+```
+
+也就是把“物体局部坐标系里的点”变换到“当前场景 / 相机坐标系里”。
+
+- `translation`
+  - 3 元向量
+  - 表示物体局部坐标原点在场景 / 相机坐标系里的位置
+  - 不是 2D 像素平移
+- `rotation`
+  - 4 元四元数
+  - 顺序是 `wxyz`
+  - 表示物体局部坐标系相对场景 / 相机坐标系的朝向
+  - 不是欧拉角
+- `scale`
+  - 3 元向量
+  - 表示 canonical 物体形状缩放到当前实例尺寸时的尺度
+  - 当前上游代码默认把它当作各向同性 scale 处理
+
+上游可视化代码里也是把这 3 个量一起组合成一个 `l2c` 变换，再去变换物体点云，所以单独看某一个字段往往不如把它们作为一组 pose 来理解。
+
+### 8.6 为什么 `scale` 里 3 个数字常常是一样的
+
+这不是偶然，也不是打印格式问题，而是当前上游代码的明确设计。
+
+默认推理路径里，pose decoder 最后返回 `scale` 时，写的是：
+
+```python
+pose_instance_dict["instance_scale_l2c"].squeeze(0).mean(-1, keepdim=True).expand(1, 3)
+```
+
+也就是：
+
+1. 先取原始 scale 的 3 个分量
+2. 求一个均值
+3. 再把这个均值扩成 `[s, s, s]`
+
+所以默认情况下你看到的 `scale` 本来就会变成三个相同的数字。
+
+即使打开布局后处理，`InferencePipelinePointMap.refine_scale()` 里也会再次把 3 个通道取平均，再写回 3 个相同值。换句话说，当前 `SAM3D-object` 的默认思路不是输出各向异性缩放，而是把 scale 强制收敛成“统一尺度”。
+
+这对我们做 `sam3dworker` 有两个直接结论：
+
+- 协议层仍然可以保留 `scale: [sx, sy, sz]` 的 3 元数组形式
+- 但在当前上游实现里，大多数情况下你会看到它接近 `[s, s, s]`
+
+如果后面你真的需要“长宽高分别不同”的各向异性 scale，就不能直接沿用现在这段上游返回逻辑，得自己改它的 pose decoder 或后处理策略。
 
 ## 9. 单目标和多目标怎么跑
 
