@@ -16,7 +16,9 @@ THIRD_PARTY_SAM3D_DIR = REPO_ROOT / "third_party" / "SAM3D-object"
 SAM3D_CONFIG_PATH = THIRD_PARTY_SAM3D_DIR / "checkpoints" / "hf" / "pipeline.yaml"
 SUPPORTED_COMMANDS = ["ping", "describe", "reconstruct"]
 SUPPORTED_ARTIFACT_TYPES = {"gaussian", "mesh"}
+WARMUP_IMAGE_SIZE = 256
 _INFERENCE: object | None = None
+_WARMUP_DONE = False
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,34 @@ def handle_command(command: str, payload: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"unknown command: {command}")
 
 
+def initialize_inference() -> object:
+    return _get_inference()
+
+
+def warmup_inference() -> None:
+    global _WARMUP_DONE
+
+    if _WARMUP_DONE:
+        return
+
+    inference = _get_inference()
+    image, mask, pointmap = _build_warmup_inputs(WARMUP_IMAGE_SIZE)
+
+    try:
+        import torch
+    except Exception as exc:
+        raise ValueError("torch is not installed in the active Python environment") from exc
+
+    pointmap_tensor = torch.from_numpy(pointmap.astype(np.float32, copy=False))
+
+    try:
+        inference(image, mask, seed=0, pointmap=pointmap_tensor)
+    except Exception as exc:
+        raise ValueError("sam3d warmup inference failed") from exc
+
+    _WARMUP_DONE = True
+
+
 def reconstruct(payload: dict[str, Any]) -> dict[str, Any]:
     request = _parse_reconstruct_request(payload)
 
@@ -78,7 +108,7 @@ def reconstruct(payload: dict[str, Any]) -> dict[str, Any]:
     pointmap_path = request.output_dir / "pointmap.npy"
     np.save(pointmap_path, pointmap.astype(np.float32, copy=False))
 
-    output = _run_sam3d_inference(
+    output, model_inference_ms = _run_sam3d_inference(
         request=request,
         image=image,
         mask=mask,
@@ -88,6 +118,7 @@ def reconstruct(payload: dict[str, Any]) -> dict[str, Any]:
     return _build_reconstruct_response(
         request=request,
         pointmap_path=pointmap_path,
+        model_inference_ms=model_inference_ms,
         output=output,
     )
 
@@ -273,26 +304,54 @@ def _build_pointmap(
     return pointmap
 
 
+def _build_warmup_inputs(size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    x_gradient = np.linspace(0, 255, size, dtype=np.uint8)
+    y_gradient = np.linspace(0, 255, size, dtype=np.uint8)[:, None]
+
+    image = np.zeros((size, size, 3), dtype=np.uint8)
+    image[..., 0] = x_gradient
+    image[..., 1] = y_gradient
+    image[..., 2] = 128
+
+    mask = np.zeros((size, size), dtype=np.uint8)
+    inset = max(size // 4, 1)
+    mask[inset : size - inset, inset : size - inset] = 1
+
+    depth = np.ones((size, size), dtype=np.float32)
+    pointmap = _build_pointmap(
+        depth,
+        fx=float(size),
+        fy=float(size),
+        cx=(size - 1) / 2.0,
+        cy=(size - 1) / 2.0,
+    )
+    return image, mask, pointmap
+
+
 def _run_sam3d_inference(
     *,
     request: ReconstructRequest,
     image: np.ndarray,
     mask: np.ndarray,
     pointmap: np.ndarray,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], float]:
     inference = _get_inference()
 
     try:
         import torch
+        import time
     except Exception as exc:
         raise ValueError("torch is not installed in the active Python environment") from exc
 
     pointmap_tensor = torch.from_numpy(pointmap.astype(np.float32, copy=False))
 
     try:
-        return inference(image, mask, seed=42, pointmap=pointmap_tensor)
+        start = time.perf_counter()
+        output = inference(image, mask, seed=42, pointmap=pointmap_tensor)
     except Exception as exc:
         raise ValueError(f"sam3d inference failed for label {request.label}") from exc
+    model_inference_ms = (time.perf_counter() - start) * 1000.0
+    return output, model_inference_ms
 
 
 def _get_inference() -> object:
@@ -338,6 +397,7 @@ def _build_reconstruct_response(
     *,
     request: ReconstructRequest,
     pointmap_path: Path,
+    model_inference_ms: float,
     output: dict[str, Any],
 ) -> dict[str, Any]:
     pose = {
@@ -364,6 +424,7 @@ def _build_reconstruct_response(
         "mask_path": str(request.mask_path),
         "output_dir": str(request.output_dir),
         "pointmap_path": str(pointmap_path.resolve()),
+        "model_inference_ms": model_inference_ms,
         "pose": pose,
         "artifacts": artifacts,
     }

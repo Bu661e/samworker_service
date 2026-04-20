@@ -9,7 +9,7 @@ sys.path.insert(0, str(REPO_ROOT / "worker_ipc"))
 
 from worker_ipc import Request, Response, UdsJsonlServer  # noqa: E402
 
-from service import handle_command  # noqa: E402
+from service import handle_command, initialize_inference, warmup_inference  # noqa: E402
 
 
 def _handle_request(request: Request) -> Response:
@@ -23,6 +23,8 @@ def _handle_request(request: Request) -> Response:
 
 
 def main() -> int:
+    initialize_inference()
+    warmup_inference()
     server = UdsJsonlServer.from_env()
     server.serve_forever(_handle_request)
     return 0

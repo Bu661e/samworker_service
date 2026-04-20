@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import struct
+import time
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,11 +78,12 @@ def infer(payload: dict[str, Any]) -> dict[str, Any]:
     except OSError as exc:
         raise ValueError(f"failed to create output_dir: {request.output_dir}") from exc
 
-    predictions = _run_sam_inference(request)
+    predictions, model_inference_ms = _run_sam_inference(request)
     if len(predictions) != len(request.bboxes):
         raise ValueError(
             f"sam3 returned {len(predictions)} results for {len(request.bboxes)} bbox prompts"
         )
+    avg_inference_ms = model_inference_ms / len(request.bboxes)
 
     results: list[dict[str, Any]] = []
     for index, (prompt, prediction) in enumerate(zip(request.bboxes, predictions)):
@@ -91,6 +93,7 @@ def infer(payload: dict[str, Any]) -> dict[str, Any]:
             "found": prediction.found,
             "bbox_2d": None,
             "mask_path": None,
+            "avg_inference_ms": avg_inference_ms,
         }
 
         if prediction.found:
@@ -115,6 +118,7 @@ def infer(payload: dict[str, Any]) -> dict[str, Any]:
         "prompt_mode": "bbox",
         "image_path": str(request.image_path),
         "output_dir": str(request.output_dir),
+        "batch_model_inference_ms": model_inference_ms,
         "results": results,
     }
 
@@ -175,27 +179,40 @@ def _parse_infer_request(payload: dict[str, Any]) -> InferRequest:
     )
 
 
-def _run_sam_inference(request: InferRequest) -> list[ModelPrediction]:
+def _run_sam_inference(request: InferRequest) -> tuple[list[ModelPrediction], float]:
     model = _require_loaded_model()
     prompts = [list(prompt.bbox_2d) for prompt in request.bboxes]
 
+    raw_results: object
+    start = time.perf_counter()
     try:
-        raw_results = model.predict(
-            source=str(request.image_path),
-            bboxes=prompts,
-            verbose=False,
-            save=False,
-            multimask_output=False,
-        )
-    except TypeError:
-        raw_results = model.predict(
-            source=str(request.image_path),
-            bboxes=prompts,
-            verbose=False,
-            save=False,
-        )
+        try:
+            raw_results = model.predict(
+                source=str(request.image_path),
+                bboxes=prompts,
+                verbose=False,
+                save=False,
+                multimask_output=False,
+            )
+        except Exception as exc:
+            if not _should_retry_without_multimask_output(exc):
+                raise
+            raw_results = model.predict(
+                source=str(request.image_path),
+                bboxes=prompts,
+                verbose=False,
+                save=False,
+            )
+    finally:
+        model_inference_ms = (time.perf_counter() - start) * 1000.0
 
-    return _normalize_sam_results(raw_results, len(request.bboxes))
+    return _normalize_sam_results(raw_results, len(request.bboxes)), model_inference_ms
+
+
+def _should_retry_without_multimask_output(exc: Exception) -> bool:
+    if isinstance(exc, TypeError):
+        return True
+    return "multimask_output" in str(exc)
 
 
 def _construct_model(weight_path: Path) -> object:

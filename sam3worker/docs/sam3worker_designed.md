@@ -32,6 +32,82 @@
 
 - 使用说明：`ultralytics_SAM3_使用指南.md`
 
+## 父进程使用方式
+
+外部模块如果要以子进程方式使用 `sam3worker`，优先建议直接使用仓库内提供的父进程封装：
+
+- `from sam3worker import Sam3WorkerClient`
+
+这层封装内部已经基于 `worker_ipc.ManagedChildProcess` 处理了：
+
+- worker 子进程拉起
+- `ping` 探活
+- Unix Domain Socket 路径传递
+- `start()` / `stop()`
+- `describe`、`ping`、`infer(...)` 的业务方法封装
+
+推荐示例：
+
+```python
+from pathlib import Path
+
+from sam3worker import Sam3WorkerClient
+
+
+python_bin = "/root/autodl-tmp/conda/envs/sam3d-objects/bin/python"
+
+with Sam3WorkerClient(
+    socket_path=Path("/tmp/sam3-worker.sock"),
+    python_executable=python_bin,
+) as client:
+    meta = client.describe()
+    result = client.infer(
+        image_path="/abs/path/image.jpg",
+        output_dir="/abs/path/sam3_outputs/req-1",
+        bboxes=[
+            {"label": "red_cube_0", "bbox_2d": [379, 458, 431, 522]},
+            {"label": "blue_cube_0", "bbox_2d": [301, 365, 353, 427]},
+        ],
+        timeout=60.0,
+    )
+```
+
+接口约定：
+
+- `Sam3WorkerClient.start()`：启动 worker 并等待 `ping` 就绪
+- `Sam3WorkerClient.stop()`：关闭 worker 子进程
+- `Sam3WorkerClient.call_raw(...)`：返回 `worker_ipc.Response`
+- `Sam3WorkerClient.call(...)`：返回业务 `payload`，如果 worker 返回 `ok=false` 则抛 `Sam3WorkerCommandError`
+- `Sam3WorkerClient.describe()` / `ping()` / `infer(...)`：对应业务命令的便捷方法
+
+如果外部模块已经自己管理了 worker 生命周期，也可以直接使用 `worker_ipc.UdsJsonlClient` 或 `ManagedChildProcess`；但在当前仓库里，优先建议使用 `Sam3WorkerClient`，避免重复拼装请求格式。
+
+## GPU 集成测试
+
+`sam3worker/tests/` 当前已经切成真实 worker 集成测试，不再使用 mock 模型或 fake IPC。
+
+测试特点：
+
+- 通过 `Sam3WorkerClient` 真正拉起 `sam3worker/worker.py`
+- 使用 `sam3worker/tests/inputs/example.png`
+- 使用 `sam3worker/tests/inputs/bboxes.json`
+- 真实执行 GPU 推理，并检查输出 mask、bbox 和耗时字段
+
+运行前提：
+
+- 机器可见 GPU
+- `torch.cuda.is_available()` 为 `True`
+- `/root/sam3.pt` 存在
+- conda 环境 `/root/autodl-tmp/conda/envs/sam3d-objects` 可用
+
+推荐测试命令：
+
+```bash
+/root/autodl-tmp/conda/envs/sam3d-objects/bin/python -m pytest sam3worker/tests
+```
+
+如果当前机器没有 GPU，测试会自动跳过，不会伪造 CPU 路径结果。
+
 ## 业务指令汇总
 
 - `ping`
@@ -176,20 +252,23 @@
     "prompt_mode": "bbox",
     "image_path": "/abs/path/image.jpg",
     "output_dir": "/abs/path/sam3_outputs/req-3",
+    "batch_model_inference_ms": 18.4,
     "results": [
       {
         "label": "red_cube_0",
         "prompt_bbox_2d": [379, 458, 431, 522],
         "found": true,
         "bbox_2d": [380, 459, 430, 521],
-        "mask_path": "/abs/path/sam3_outputs/req-3/red_cube_0.png"
+        "mask_path": "/abs/path/sam3_outputs/req-3/000_red_cube_0.png",
+        "avg_inference_ms": 9.2
       },
       {
         "label": "blue_cube_0",
         "prompt_bbox_2d": [301, 365, 353, 427],
         "found": false,
         "bbox_2d": null,
-        "mask_path": null
+        "mask_path": null,
+        "avg_inference_ms": 9.2
       }
     ]
   }
@@ -199,7 +278,9 @@
 响应字段约定：
 
 - `results` 与请求中的 `bboxes` 顺序保持一致
+- `batch_model_inference_ms`：当前这次请求里，SAM3 对整组 `bboxes` 做单次批量推理的耗时，单位毫秒
 - `prompt_bbox_2d`：原样回传输入提示框
+- `avg_inference_ms`：`batch_model_inference_ms / len(bboxes)` 的分摊值，便于按 object 统计；它不是每个 object 的真实独立 GPU 推理时间
 - `found=true` 时：
   - `bbox_2d` 为实际分割结果对应的 `xyxy`
   - `mask_path` 为生成的 mask 文件绝对路径
