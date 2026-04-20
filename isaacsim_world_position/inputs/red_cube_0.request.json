@@ -1,0 +1,27 @@
+{
+  "label": "red_cube_0",
+  "depth_path": "../../sam3dworker/tests/inputs/emp_default_tableoverview/example.npy",
+  "mask_path": "../../sam3dworker/tests/inputs/emp_default_tableoverview/red_cube_0.png",
+  "intrinsics": {
+    "fx": 533.3333740234375,
+    "fy": 533.3333740234375,
+    "cx": 320.0,
+    "cy": 320.0
+  },
+  "camera_world_position_xyz_m": [
+    0.0,
+    3.299999952316284,
+    3.299999952316284
+  ],
+  "camera_world_quaternion_wxyz": [
+    0.6830127033145597,
+    0.18301269658397273,
+    0.18301269658397282,
+    -0.6830127033145597
+  ],
+  "expected_world_position_xyz_m": [
+    0.16,
+    0.22,
+    1.54
+  ]
+}
