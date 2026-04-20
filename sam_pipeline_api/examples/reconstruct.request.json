@@ -1,0 +1,50 @@
+{
+  "request_id": "demo-request",
+  "task": "把红色方块放到蓝色方块上面",
+  "bboxes": [
+    {
+      "bbox_2d": [244, 294, 274, 333],
+      "label": "red_cube_0"
+    },
+    {
+      "bbox_2d": [194, 234, 223, 270],
+      "label": "blue_cube_0"
+    }
+  ],
+  "camera": {
+    "id": "table_overview",
+    "status": "ready",
+    "prim_path": "/World/Cameras/TableOverviewCamera",
+    "mount_mode": "usd",
+    "resolution": [640, 640],
+    "intrinsics": {
+      "fx": 533.3333740234375,
+      "fy": 533.3333740234375,
+      "cx": 320.0,
+      "cy": 320.0,
+      "width": 640,
+      "height": 640
+    },
+    "pose": {
+      "position_xyz_m": [0.0, 3.299999952316284, 3.299999952316284],
+      "quaternion_wxyz": [0.6830127033145597, 0.18301269658397273, 0.18301269658397282, -0.6830127033145597]
+    },
+    "rgb_image": {
+      "ref": {
+        "id": "artifact-rgb-001",
+        "kind": "artifact_file",
+        "content_type": "image/png",
+        "download_url": "file:///root/samworker_service/sam3dworker/tests/inputs/emp_default_tableoverview/example.png"
+      }
+    },
+    "depth_image": {
+      "unit": "meter",
+      "ref": {
+        "id": "artifact-depth-001",
+        "kind": "artifact_file",
+        "content_type": "application/x-npy",
+        "download_url": "file:///root/samworker_service/sam3dworker/tests/inputs/emp_default_tableoverview/example.npy"
+      }
+    }
+  }
+}
