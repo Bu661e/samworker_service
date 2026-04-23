@@ -31,20 +31,20 @@
 
 ## 启动方式
 
-请使用 `sam3d-objects` 环境里的 Python。
+请使用 `base` 环境里的 Python。
 
 推荐命令：
 
 ```bash
 cd /root/samworker_service
-/root/autodl-tmp/conda/envs/sam3d-objects/bin/python -m sam_pipeline_api.serve
+/opt/conda/bin/python -m sam_pipeline_api.serve
 ```
 
 或者：
 
 ```bash
 cd /root/samworker_service
-/root/autodl-tmp/conda/envs/sam3d-objects/bin/python -m uvicorn sam_pipeline_api.app:app --host 0.0.0.0 --port 6006
+/opt/conda/bin/python -m uvicorn sam_pipeline_api.app:app --host 0.0.0.0 --port 6006
 ```
 
 说明：
@@ -341,6 +341,6 @@ curl -X POST http://127.0.0.1:6006/v1/objects/reconstruct \
 - `SAM3` 如果某个框没有分出目标，该物体会返回 `status=not_found`
 - `SAM3D` 如果某个物体重建失败，该物体会返回 `status=error`
 - 如果 `SAM3D` 成功但 `object_3d` 估计失败，该物体会返回 `status=partial_success`
-- 当前 `object_3d` 来自可见深度点云的 `PCA3D OBB`
+- 当前 `object_3d` 来自可见深度点云的 `PCA3D OBB`，具体几何实现位于 `object_geometry/`
 - 当前不会把结果转换到世界坐标系
 - 当前默认只请求 `mesh`，不会请求 `gaussian`

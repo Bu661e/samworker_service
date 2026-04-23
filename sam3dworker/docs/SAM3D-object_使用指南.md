@@ -102,18 +102,29 @@
 
 ## 5. 安装步骤
 
-### 5.1 创建环境
+### 5.1 使用当前 base 环境
 
-官方推荐的是 `mamba`：
+当前服务器使用已有的 Conda `base` 环境：
+
+```bash
+conda activate base
+which python
+python --version
+```
+
+当前已确认的路径：
+
+```text
+/opt/conda
+/opt/conda/bin/python
+Python 3.11.13
+```
+
+如需按上游环境文件重建依赖，可以在当前 `base` 环境内参考 `environments/default.yml` 安装对应依赖：
 
 ```bash
 cd samworker_service/third_party/SAM3D-object
-
-mamba env create -f environments/default.yml
-mamba activate sam3d-objects
 ```
-
-如果你只能用 `conda`，上游文档说可以直接把命令里的 `mamba` 换成 `conda`。
 
 ### 5.2 安装主依赖和 PyTorch3D
 

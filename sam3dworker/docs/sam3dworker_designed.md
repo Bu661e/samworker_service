@@ -23,9 +23,9 @@
 
 ## 运行环境
 
-- 推荐 conda 环境：`sam3d-objects`
-- 推荐解释器：`/root/autodl-tmp/conda/envs/sam3d-objects/bin/python`
-- 如果直接使用 conda：`conda run -n sam3d-objects python ...`
+- 推荐 conda 环境：`base`
+- 推荐解释器：`/opt/conda/bin/python`
+- 如果直接使用 conda：`conda run -n base python ...`
 
 ## 权重与路径
 
@@ -69,7 +69,7 @@ from pathlib import Path
 from sam3dworker import Sam3dWorkerClient
 
 
-python_bin = "/root/autodl-tmp/conda/envs/sam3d-objects/bin/python"
+python_bin = "/opt/conda/bin/python"
 
 with Sam3dWorkerClient(
     socket_path=Path("/tmp/sam3d-worker.sock"),
@@ -121,7 +121,7 @@ with Sam3dWorkerClient(
 - `torch.cuda.is_available()` 为 `True`
 - `/root/hf` 权重目录存在
 - `third_party/SAM3D-object/checkpoints/hf -> /root/hf` 有效
-- conda 环境 `/root/autodl-tmp/conda/envs/sam3d-objects` 可用
+- conda base 路径 `/opt/conda` 可用，解释器为 `/opt/conda/bin/python`
 - 如果当前环境访问 Hugging Face 需要网络切换，worker 启动前需要先执行：
 
 ```bash
@@ -133,7 +133,7 @@ source /etc/network_turbo
 推荐测试命令：
 
 ```bash
-/root/autodl-tmp/conda/envs/sam3d-objects/bin/python -m pytest sam3dworker/tests
+/opt/conda/bin/python -m pytest sam3dworker/tests
 ```
 
 基线实测时间（2026-04-07，输入为 `emp_default_tableoverview`，当时 `with_layout_postprocess=False`）：

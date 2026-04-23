@@ -10,10 +10,10 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from object_geometry import CameraObbResult, estimate_masked_camera_obb
 from sam3dworker import Sam3dWorkerClient
 from sam3worker import Sam3WorkerClient, Sam3WorkerCommandError
 
-from .geometry import CameraObbResult, estimate_masked_camera_obb
 from .models import (
     ArtifactPathsModel,
     AxisConventionModel,
@@ -31,7 +31,7 @@ from .models import (
 
 LOGGER = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PYTHON_EXECUTABLE = Path("/root/autodl-tmp/conda/envs/sam3d-objects/bin/python")
+DEFAULT_PYTHON_EXECUTABLE = Path("/opt/conda/bin/python")
 DEFAULT_RUN_ROOT = REPO_ROOT / "sam_pipeline_api" / "runs"
 DEFAULT_SOCKET_DIR = REPO_ROOT / "sam_pipeline_api" / "sockets"
 DEFAULT_TRACE_DIR = REPO_ROOT / "sam_pipeline_api" / "traces"

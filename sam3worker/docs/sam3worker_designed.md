@@ -18,9 +18,9 @@
 
 ## 运行环境
 
-- 推荐 conda 环境：`sam3d-objects`
-- 推荐解释器：`/root/autodl-tmp/conda/envs/sam3d-objects/bin/python`
-- 如果直接使用 conda：`conda run -n sam3d-objects python ...`
+- 推荐 conda 环境：`base`
+- 推荐解释器：`/opt/conda/bin/python`
+- 如果直接使用 conda：`conda run -n base python ...`
 
 ## 权重与路径
 
@@ -54,7 +54,7 @@ from pathlib import Path
 from sam3worker import Sam3WorkerClient
 
 
-python_bin = "/root/autodl-tmp/conda/envs/sam3d-objects/bin/python"
+python_bin = "/opt/conda/bin/python"
 
 with Sam3WorkerClient(
     socket_path=Path("/tmp/sam3-worker.sock"),
@@ -98,12 +98,12 @@ with Sam3WorkerClient(
 - 机器可见 GPU
 - `torch.cuda.is_available()` 为 `True`
 - `/root/sam3.pt` 存在
-- conda 环境 `/root/autodl-tmp/conda/envs/sam3d-objects` 可用
+- conda base 路径 `/opt/conda` 可用，解释器为 `/opt/conda/bin/python`
 
 推荐测试命令：
 
 ```bash
-/root/autodl-tmp/conda/envs/sam3d-objects/bin/python -m pytest sam3worker/tests
+/opt/conda/bin/python -m pytest sam3worker/tests
 ```
 
 如果当前机器没有 GPU，测试会自动跳过，不会伪造 CPU 路径结果。

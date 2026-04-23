@@ -11,7 +11,7 @@ from sam3dworker import Sam3dWorkerClient
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PYTHON_EXECUTABLE = Path("/root/autodl-tmp/conda/envs/sam3d-objects/bin/python")
+PYTHON_EXECUTABLE = Path("/opt/conda/bin/python")
 INPUT_DIR = REPO_ROOT / "sam3dworker" / "tests" / "inputs" / "emp_default_tableoverview"
 RUNS_DIR = REPO_ROOT / "sam3dworker" / "tests" / "runs"
 PAYLOADS_PATH = INPUT_DIR / "payloads.json"

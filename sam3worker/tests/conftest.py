@@ -11,7 +11,7 @@ from sam3worker import Sam3WorkerClient
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PYTHON_EXECUTABLE = Path("/root/autodl-tmp/conda/envs/sam3d-objects/bin/python")
+PYTHON_EXECUTABLE = Path("/opt/conda/bin/python")
 SAM3_WEIGHT_PATH = Path("/root/sam3.pt")
 INPUT_DIR = REPO_ROOT / "sam3worker" / "tests" / "inputs"
 RUNS_DIR = REPO_ROOT / "sam3worker" / "tests" / "runs"
