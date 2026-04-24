@@ -11,16 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from object_geometry import CameraObbResult, estimate_masked_camera_obb
-from sam3dworker import Sam3dWorkerClient
 from sam3worker import Sam3WorkerClient, Sam3WorkerCommandError
 
 from .models import (
-    ArtifactPathsModel,
     AxisConventionModel,
     Object3DModel,
     ObjectResultModel,
     ObjectTimingModel,
-    PoseCameraModel,
     ReconstructObjectsRequest,
     ReconstructObjectsResponse,
     RequestTimingModel,
@@ -55,15 +52,12 @@ class SamPipelineService:
         python_executable: Path,
         paths: PipelinePaths,
         startup_timeout_s: float,
-        default_request_timeout_s: float,
     ) -> None:
         self._python_executable = python_executable
         self._paths = paths
         self._startup_timeout_s = startup_timeout_s
-        self._default_request_timeout_s = default_request_timeout_s
         self._lock = threading.Lock()
         self._sam3_client: Sam3WorkerClient | None = None
-        self._sam3d_client: Sam3dWorkerClient | None = None
 
     @classmethod
     def from_env(cls) -> "SamPipelineService":
@@ -71,9 +65,6 @@ class SamPipelineService:
             os.environ.get("SAM_PIPELINE_PYTHON", str(DEFAULT_PYTHON_EXECUTABLE))
         ).expanduser()
         startup_timeout_s = float(os.environ.get("SAM_PIPELINE_STARTUP_TIMEOUT_S", "180.0"))
-        default_request_timeout_s = float(
-            os.environ.get("SAM_PIPELINE_DEFAULT_REQUEST_TIMEOUT_S", "600.0")
-        )
         run_root = Path(os.environ.get("SAM_PIPELINE_RUN_ROOT", str(DEFAULT_RUN_ROOT))).expanduser()
         socket_dir = Path(
             os.environ.get("SAM_PIPELINE_SOCKET_DIR", str(DEFAULT_SOCKET_DIR))
@@ -87,7 +78,6 @@ class SamPipelineService:
                 trace_dir=trace_dir.resolve(),
             ),
             startup_timeout_s=startup_timeout_s,
-            default_request_timeout_s=default_request_timeout_s,
         )
 
     def start(self) -> None:
@@ -96,9 +86,7 @@ class SamPipelineService:
         self._paths.trace_dir.mkdir(parents=True, exist_ok=True)
 
         sam3_socket_path = self._paths.socket_dir / "sam3.sock"
-        sam3d_socket_path = self._paths.socket_dir / "sam3d.sock"
         _unlink_if_exists(sam3_socket_path)
-        _unlink_if_exists(sam3d_socket_path)
 
         self._sam3_client = Sam3WorkerClient(
             socket_path=sam3_socket_path,
@@ -107,27 +95,15 @@ class SamPipelineService:
             cwd=REPO_ROOT,
             trace_path=self._paths.trace_dir / "sam3-client-trace.jsonl",
         )
-        self._sam3d_client = Sam3dWorkerClient(
-            socket_path=sam3d_socket_path,
-            python_executable=self._python_executable,
-            startup_timeout=self._startup_timeout_s,
-            cwd=REPO_ROOT,
-            trace_path=self._paths.trace_dir / "sam3d-client-trace.jsonl",
-        )
 
         try:
             self._sam3_client.start()
-            self._sam3d_client.start()
             LOGGER.info("sam3 worker metadata: %s", self._sam3_client.describe(timeout=30.0))
-            LOGGER.info("sam3d worker metadata: %s", self._sam3d_client.describe(timeout=30.0))
         except Exception:
             self.stop()
             raise
 
     def stop(self) -> None:
-        if self._sam3d_client is not None:
-            self._sam3d_client.stop()
-            self._sam3d_client = None
         if self._sam3_client is not None:
             self._sam3_client.stop()
             self._sam3_client = None
@@ -141,7 +117,6 @@ class SamPipelineService:
         request: ReconstructObjectsRequest,
     ) -> ReconstructObjectsResponse:
         sam3_client = self._require_sam3_client()
-        sam3d_client = self._require_sam3d_client()
 
         if request.camera.depth_image.unit.lower() not in {"meter", "meters", "m"}:
             raise PipelineInputError(
@@ -157,10 +132,8 @@ class SamPipelineService:
 
         inputs_dir = request_root / "inputs"
         sam3_output_dir = request_root / "sam3"
-        objects_root = request_root / "objects"
         inputs_dir.mkdir(parents=True, exist_ok=True)
         sam3_output_dir.mkdir(parents=True, exist_ok=True)
-        objects_root.mkdir(parents=True, exist_ok=True)
 
         total_start = time.perf_counter()
         download_started_at = time.perf_counter()
@@ -197,7 +170,6 @@ class SamPipelineService:
 
         objects: list[ObjectResultModel] = []
         errors: list[str] = []
-        sam3d_total_inference_ms = 0.0
         obb_total_estimation_ms = 0.0
 
         for target, sam3_result in zip(request.bboxes, sam3_results, strict=True):
@@ -220,7 +192,6 @@ class SamPipelineService:
                         label=target.label,
                         status="not_found",
                         segmentation=segmentation,
-                        artifacts=ArtifactPathsModel(),
                         timing=timing,
                         error=error_message,
                     )
@@ -228,65 +199,9 @@ class SamPipelineService:
                 errors.append(error_message)
                 continue
 
-            object_output_dir = objects_root / _safe_fragment(target.label)
-            object_output_dir.mkdir(parents=True, exist_ok=True)
-
-            pose_camera: PoseCameraModel | None = None
             object_3d: Object3DModel | None = None
-            artifacts = ArtifactPathsModel()
             object_status = "success"
             object_error: str | None = None
-
-            try:
-                sam3d_response = sam3d_client.reconstruct(
-                    image_path=image_path,
-                    depth_path=depth_path,
-                    mask_path=segmentation.mask_path,
-                    output_dir=object_output_dir,
-                    fx=request.camera.intrinsics.fx,
-                    fy=request.camera.intrinsics.fy,
-                    cx=request.camera.intrinsics.cx,
-                    cy=request.camera.intrinsics.cy,
-                    label=target.label,
-                    artifact_types=list(request.artifact_types),
-                    request_id=f"{request_id}-sam3d-{_safe_fragment(target.label)}",
-                    timeout=request.sam3d_timeout_s or self._default_request_timeout_s,
-                )
-                pose = sam3d_response["pose"]
-                pose_camera = PoseCameraModel(
-                    rotation_quaternion_wxyz=[float(value) for value in pose["rotation"]],
-                    translation_xyz_m=[float(value) for value in pose["translation"]],
-                    scale_xyz_m=[float(value) for value in pose["scale"]],
-                )
-                timing.sam3d_inference_ms = _optional_float(sam3d_response.get("model_inference_ms"))
-                if timing.sam3d_inference_ms is not None:
-                    sam3d_total_inference_ms += timing.sam3d_inference_ms
-                artifacts = ArtifactPathsModel(
-                    pointmap_path=_optional_string(sam3d_response.get("pointmap_path")),
-                    mesh_glb_path=_optional_string(
-                        sam3d_response.get("artifacts", {}).get("mesh_glb_path")
-                    ),
-                    gaussian_ply_path=_optional_string(
-                        sam3d_response.get("artifacts", {}).get("gaussian_ply_path")
-                    ),
-                )
-            except Exception as exc:
-                object_status = "error"
-                object_error = str(exc)
-                errors.append(f"{target.label}: {object_error}")
-                objects.append(
-                    ObjectResultModel(
-                        label=target.label,
-                        status=object_status,
-                        segmentation=segmentation,
-                        object_3d=object_3d,
-                        pose_camera=pose_camera,
-                        artifacts=artifacts,
-                        timing=timing,
-                        error=object_error,
-                    )
-                )
-                continue
 
             try:
                 obb_started_at = time.perf_counter()
@@ -302,8 +217,8 @@ class SamPipelineService:
                 obb_total_estimation_ms += timing.obb_estimation_ms
                 object_3d = _build_object_3d_model(obb_result)
             except Exception as exc:
-                object_status = "partial_success"
-                object_error = f"sam3d succeeded but object_3d estimation failed: {exc}"
+                object_status = "error"
+                object_error = f"object_3d estimation failed: {exc}"
                 errors.append(f"{target.label}: {object_error}")
 
             objects.append(
@@ -312,8 +227,6 @@ class SamPipelineService:
                     status=object_status,
                     segmentation=segmentation,
                     object_3d=object_3d,
-                    pose_camera=pose_camera,
-                    artifacts=artifacts,
                     timing=timing,
                     error=object_error,
                 )
@@ -334,7 +247,6 @@ class SamPipelineService:
                 total_ms=total_ms,
                 download_inputs_ms=download_inputs_ms,
                 sam3_batch_inference_ms=_optional_float(sam3_response.get("batch_model_inference_ms")),
-                sam3d_total_inference_ms=sam3d_total_inference_ms,
                 obb_total_estimation_ms=obb_total_estimation_ms,
             ),
             objects=objects,
@@ -345,11 +257,6 @@ class SamPipelineService:
         if self._sam3_client is None:
             raise RuntimeError("sam3 worker client is not started")
         return self._sam3_client
-
-    def _require_sam3d_client(self) -> Sam3dWorkerClient:
-        if self._sam3d_client is None:
-            raise RuntimeError("sam3d worker client is not started")
-        return self._sam3d_client
 
 
 def _build_object_3d_model(obb_result: CameraObbResult) -> Object3DModel:

@@ -34,7 +34,7 @@
         "id": "artifact-rgb-001",
         "kind": "artifact_file",
         "content_type": "image/png",
-        "download_url": "file:///root/samworker_service/sam3dworker/tests/inputs/emp_default_tableoverview/example.png"
+        "download_url": "file:///root/samworker_service/sam_pipeline_api/examples/inputs/example.png"
       }
     },
     "depth_image": {
@@ -43,7 +43,7 @@
         "id": "artifact-depth-001",
         "kind": "artifact_file",
         "content_type": "application/x-npy",
-        "download_url": "file:///root/samworker_service/sam3dworker/tests/inputs/emp_default_tableoverview/example.npy"
+        "download_url": "file:///root/samworker_service/sam_pipeline_api/examples/inputs/example.npy"
       }
     }
   }

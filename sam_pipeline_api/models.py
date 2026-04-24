@@ -115,10 +115,8 @@ class ReconstructObjectsRequest(BaseModel):
     task: str
     bboxes: list[BboxPromptModel] = Field(min_length=1)
     camera: CameraRequestModel
-    artifact_types: list[Literal["mesh", "gaussian"]] = Field(default_factory=lambda: ["mesh"])
     output_root: str | None = None
     sam3_timeout_s: float = Field(default=300.0, gt=0.0)
-    sam3d_timeout_s: float = Field(default=600.0, gt=0.0)
 
     @field_validator("request_id", "task", "output_root")
     @classmethod
@@ -163,14 +161,6 @@ class SegmentationResultModel(BaseModel):
     mask_path: str | None = None
 
 
-class PoseCameraModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    rotation_quaternion_wxyz: list[float]
-    translation_xyz_m: list[float]
-    scale_xyz_m: list[float]
-
-
 class Object3DModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -184,19 +174,10 @@ class Object3DModel(BaseModel):
     visible_point_count: int
 
 
-class ArtifactPathsModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    pointmap_path: str | None = None
-    mesh_glb_path: str | None = None
-    gaussian_ply_path: str | None = None
-
-
 class ObjectTimingModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sam3_avg_inference_ms: float | None = None
-    sam3d_inference_ms: float | None = None
     obb_estimation_ms: float | None = None
 
 
@@ -207,8 +188,6 @@ class ObjectResultModel(BaseModel):
     status: Literal["success", "partial_success", "not_found", "error"]
     segmentation: SegmentationResultModel
     object_3d: Object3DModel | None = None
-    pose_camera: PoseCameraModel | None = None
-    artifacts: ArtifactPathsModel
     timing: ObjectTimingModel
     error: str | None = None
 
@@ -219,7 +198,6 @@ class RequestTimingModel(BaseModel):
     total_ms: float
     download_inputs_ms: float = 0.0
     sam3_batch_inference_ms: float | None = None
-    sam3d_total_inference_ms: float = 0.0
     obb_total_estimation_ms: float = 0.0
 
 

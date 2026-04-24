@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
-from sam3dworker import Sam3dWorkerCommandError
 from sam3worker import Sam3WorkerCommandError
 
 from .models import ReconstructObjectsRequest, ReconstructObjectsResponse
@@ -38,7 +37,7 @@ def create_app() -> FastAPI:
             return pipeline_service.reconstruct_objects(request)
         except PipelineInputError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except (Sam3WorkerCommandError, Sam3dWorkerCommandError) as exc:
+        except Sam3WorkerCommandError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return app

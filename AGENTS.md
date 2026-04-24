@@ -6,7 +6,7 @@ This repository contains several related Python components:
 
 - `sam3worker/` and `sam3dworker/`: persistent worker clients, services, and model-facing logic. Each has `tests/`, `docs/`, and sample inputs under `tests/inputs/`.
 - `worker_ipc/`: reusable Unix domain socket JSONL IPC package. Source lives in `worker_ipc/worker_ipc/`, tests in `worker_ipc/tests/`, and examples in `worker_ipc/examples/`.
-- `sam_pipeline_api/`: FastAPI service that orchestrates SAM3 and SAM3D workers. Example requests live in `sam_pipeline_api/examples/`.
+- `sam_pipeline_api/`: FastAPI service that orchestrates SAM3 segmentation and `object_geometry` OBB estimation. Example requests live in `sam_pipeline_api/examples/`.
 - `object_geometry/`: camera-space point cloud and OBB helpers used by the pipeline.
 - `docs/superpowers/`: planning and design notes.
 
@@ -33,7 +33,7 @@ Runs model worker tests in the expected SAM3D environment.
 /opt/conda/bin/python -m sam_pipeline_api.serve
 ```
 
-Starts the FastAPI pipeline service and persistent workers. Direct Uvicorn launch is also supported:
+Starts the FastAPI pipeline service and persistent SAM3 worker. Direct Uvicorn launch is also supported:
 
 ```bash
 /opt/conda/bin/python -m uvicorn sam_pipeline_api.app:app --host 0.0.0.0 --port 6006
