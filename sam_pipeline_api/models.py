@@ -11,9 +11,9 @@ class ArtifactRefModel(BaseModel):
     id: str
     kind: str
     content_type: str
-    download_url: str
+    content_base64: str
 
-    @field_validator("id", "kind", "content_type", "download_url")
+    @field_validator("id", "kind", "content_type", "content_base64")
     @classmethod
     def _validate_non_empty_string(cls, value: str) -> str:
         text = value.strip()
@@ -196,7 +196,7 @@ class RequestTimingModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     total_ms: float
-    download_inputs_ms: float = 0.0
+    prepare_inputs_ms: float = 0.0
     sam3_batch_inference_ms: float | None = None
     obb_total_estimation_ms: float = 0.0
 

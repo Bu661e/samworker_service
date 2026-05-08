@@ -16,8 +16,8 @@ POST /v1/objects/reconstruct
 
 单次请求流程：
 
-1. 根据 `camera.rgb_image.ref.download_url` 下载 RGB
-2. 根据 `camera.depth_image.ref.download_url` 下载 depth
+1. 根据 `camera.rgb_image.ref.content_base64` 解码并落盘 RGB
+2. 根据 `camera.depth_image.ref.content_base64` 解码并落盘 depth `.npy`
 3. `SAM3` 根据 `bboxes[]` 生成每个目标的 `mask`
 4. `object_geometry` 根据 `mask + depth + intrinsics` 估计相机坐标系下的 `OBB`
 5. 返回 `objects[]`
@@ -65,7 +65,7 @@ cd /root/samworker_service
         "id": "artifact-rgb-001",
         "kind": "artifact_file",
         "content_type": "image/png",
-        "download_url": "http://api-host/.../artifacts/rgb"
+        "content_base64": "<base64-encoded-rgb-png>"
       }
     },
     "depth_image": {
@@ -74,7 +74,7 @@ cd /root/samworker_service
         "id": "artifact-depth-001",
         "kind": "artifact_file",
         "content_type": "application/x-npy",
-        "download_url": "http://api-host/.../artifacts/depth"
+        "content_base64": "<base64-encoded-depth-npy>"
       }
     }
   }
@@ -87,9 +87,9 @@ cd /root/samworker_service
 - `bboxes[].label`: 单次请求内必须唯一
 - `bboxes[].bbox_2d`: 提供给 `SAM3` 的提示框，格式 `[x1, y1, x2, y2]`
 - `camera.intrinsics`: 相机内参
-- `camera.rgb_image.ref.download_url`: RGB 下载地址
+- `camera.rgb_image.ref.content_base64`: RGB 文件内容的 base64 字符串
 - `camera.depth_image.unit`: 当前要求是 `meter`
-- `camera.depth_image.ref.download_url`: depth `.npy` 下载地址
+- `camera.depth_image.ref.content_base64`: depth `.npy` 文件内容的 base64 字符串
 
 可选字段：
 
@@ -117,7 +117,7 @@ cd /root/samworker_service
   },
   "timing": {
     "total_ms": 120.5,
-    "download_inputs_ms": 43.2,
+    "prepare_inputs_ms": 43.2,
     "sam3_batch_inference_ms": 21.4,
     "obb_total_estimation_ms": 7.8
   },
@@ -171,7 +171,7 @@ cd /root/samworker_service
 
 默认会在 `sam_pipeline_api/runs/<request_id>/` 下生成：
 
-- `inputs/`: 下载下来的 RGB 和 depth
+- `inputs/`: 由 base64 解码落盘后的 RGB 和 depth
 - `sam3/`: `SAM3` 输出的 mask
 
 ## 当前限制
@@ -181,3 +181,4 @@ cd /root/samworker_service
 - OBB 估计失败时，该物体会返回 `status=error`
 - 当前 `object_3d` 来自可见深度点云的 `PCA3D OBB`，具体几何实现位于 `object_geometry/`
 - 当前不会把结果转换到世界坐标系
+- `content_base64` 既支持纯 base64 字符串，也支持 `data:<mime>;base64,<payload>` 形式

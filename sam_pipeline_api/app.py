@@ -30,6 +30,10 @@ def create_app() -> FastAPI:
         openapi_url=None,
     )
 
+    @app.get("/")
+    def root() -> dict[str, str]:
+        return {"status": "ok"}
+
     @app.post("/v1/objects/reconstruct", response_model=ReconstructObjectsResponse)
     def reconstruct_objects(request: ReconstructObjectsRequest) -> ReconstructObjectsResponse:
         pipeline_service: SamPipelineService = app.state.pipeline_service

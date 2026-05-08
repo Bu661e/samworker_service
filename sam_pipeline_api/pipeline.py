@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import os
 import threading
 import time
-import urllib.parse
-import urllib.request
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -136,17 +136,17 @@ class SamPipelineService:
         sam3_output_dir.mkdir(parents=True, exist_ok=True)
 
         total_start = time.perf_counter()
-        download_started_at = time.perf_counter()
-        image_path = _download_artifact(
-            request.camera.rgb_image.ref.download_url,
+        prepare_started_at = time.perf_counter()
+        image_path = _materialize_artifact(
+            request.camera.rgb_image.ref.content_base64,
             destination_path=inputs_dir / _build_artifact_filename("rgb", request.camera.rgb_image.ref.content_type),
         )
-        depth_path = _download_artifact(
-            request.camera.depth_image.ref.download_url,
+        depth_path = _materialize_artifact(
+            request.camera.depth_image.ref.content_base64,
             destination_path=inputs_dir
             / _build_artifact_filename("depth", request.camera.depth_image.ref.content_type),
         )
-        download_inputs_ms = (time.perf_counter() - download_started_at) * 1000.0
+        prepare_inputs_ms = (time.perf_counter() - prepare_started_at) * 1000.0
 
         sam3_response = sam3_client.infer(
             image_path=image_path,
@@ -245,7 +245,7 @@ class SamPipelineService:
             ),
             timing=RequestTimingModel(
                 total_ms=total_ms,
-                download_inputs_ms=download_inputs_ms,
+                prepare_inputs_ms=prepare_inputs_ms,
                 sam3_batch_inference_ms=_optional_float(sam3_response.get("batch_model_inference_ms")),
                 obb_total_estimation_ms=obb_total_estimation_ms,
             ),
@@ -303,26 +303,33 @@ def _resolve_request_root(
     return candidate
 
 
-def _download_artifact(download_url: str, *, destination_path: Path) -> Path:
+def _materialize_artifact(content_base64: str, *, destination_path: Path) -> Path:
     destination_path.parent.mkdir(parents=True, exist_ok=True)
-    parsed = urllib.parse.urlparse(download_url)
-    if parsed.scheme in {"", None}:
-        source_path = Path(download_url).expanduser()
-        if not source_path.is_absolute():
-            source_path = (Path.cwd() / source_path).resolve()
-        else:
-            source_path = source_path.resolve()
-        if not source_path.is_file():
-            raise PipelineInputError(f"artifact source does not exist: {source_path}")
-        destination_path.write_bytes(source_path.read_bytes())
-        return destination_path
-
     try:
-        with urllib.request.urlopen(download_url) as response:
-            destination_path.write_bytes(response.read())
-    except Exception as exc:
-        raise PipelineInputError(f"failed to download artifact from {download_url}: {exc}") from exc
+        destination_path.write_bytes(_decode_base64_bytes(content_base64))
+    except OSError as exc:
+        raise PipelineInputError(f"failed to write artifact to {destination_path}: {exc}") from exc
     return destination_path
+
+
+def _decode_base64_bytes(content_base64: str) -> bytes:
+    encoded = content_base64.strip()
+    if not encoded:
+        raise PipelineInputError("artifact content_base64 must be a non-empty string")
+
+    if encoded.startswith("data:"):
+        header, separator, payload = encoded.partition(",")
+        if not separator:
+            raise PipelineInputError("invalid data URL in artifact content_base64")
+        if ";base64" not in header:
+            raise PipelineInputError("artifact data URL must use base64 encoding")
+        encoded = payload
+
+    normalized = "".join(encoded.split())
+    try:
+        return base64.b64decode(normalized, validate=True)
+    except binascii.Error as exc:
+        raise PipelineInputError(f"invalid base64 artifact payload: {exc}") from exc
 
 
 def _build_artifact_filename(prefix: str, content_type: str) -> str:
